@@ -1,0 +1,4 @@
+**/__pycache__/
+ppo_traffic_light_tensorboard/
+*.zip
+*.png
