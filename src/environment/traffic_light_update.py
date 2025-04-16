@@ -131,15 +131,39 @@ class TrafficLights:
         return observation
     
     def calculate_reward(self):
-        #calculate accumulated waiting time for all vehicles in this intersection
+        #calculate current metrics
         current_wait_time = self.get_accumulated_waiting_time()
+        current_queue = self.get_queue_length()
+        current_speed = self.get_average_speed()
+        current_throughput = self.get_throughput()
         
-        #calculate reward as improvement from last step
-        reward = self.last_wait_time - current_wait_time
+        #track previous metrics if not already stored
+        if not hasattr(self, 'last_queue'):
+            self.last_queue = current_queue
+            self.last_speed = current_speed
+            self.last_throughput = current_throughput
         
-        #update for next comparison
+        #calculate individual rewards
+        wait_reward = (self.last_wait_time - current_wait_time)
+        queue_reward = (self.last_queue - current_queue) * 0.5
+        speed_reward = (current_speed - self.last_speed) * 2.0
+        throughput_reward = (current_throughput - self.last_throughput) * 1.0
+        
+        #combine rewards with weights
+        total_reward = (
+            wait_reward * 1.0 +      # Reduce waiting time
+            queue_reward * 0.5 +     # Reduce queue length
+            speed_reward * 0.3 +     # Increase average speed
+            throughput_reward * 0.2  # Increase throughput
+        )
+        
+        #update metrics for next comparison
         self.last_wait_time = current_wait_time
-        return reward
+        self.last_queue = current_queue
+        self.last_speed = current_speed
+        self.last_throughput = current_throughput
+        
+        return total_reward
 
     def get_accumulated_waiting_time(self):
         #get all lanes controlled by this traffic light
