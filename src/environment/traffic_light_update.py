@@ -76,6 +76,9 @@ class TrafficLights:
         #update traffic light based on action
         self.time_since_last_change += 1
         
+        if action is None:
+            return
+
         #if action is provided (agent decided to change phase)
         if action is not None and action > 0:
             #only change if minimum green time has passed

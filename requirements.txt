@@ -1,0 +1,15 @@
+# Core dependencies
+stable-baselines3>=2.0.0
+gymnasium>=0.28.1
+numpy>=1.24.0
+matplotlib>=3.7.0
+pandas>=2.0.0
+
+# SUMO interface
+traci>=1.17.0
+sumolib>=1.17.0
+
+# Reinforcement learning libraries
+tensorboard>=2.12.0
+torch>=2.0.0
+gymnasium[box2d]>=0.28.1

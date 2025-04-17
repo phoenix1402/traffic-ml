@@ -7,10 +7,11 @@ import matplotlib.pyplot as plt
 
 from src.environment.sumo_env import SumoEnvironment
 
-def run_simulation(net_file, route_file, model_path=None, steps=3600, gui=True):
+def run_simulation(net_file, route_file, model_path=None, steps=3600, gui=True, use_default=False):
     print(f"Starting simulation with network: {net_file}")
     print(f"Route file: {route_file}")
     print(f"GUI enabled: {gui}")
+    print(f"Using default traffic light controller: {use_default}")
     
     #create environment
     try:
@@ -49,14 +50,15 @@ def run_simulation(net_file, route_file, model_path=None, steps=3600, gui=True):
         }
 
         while not done:
-            #get action from model or random
-            if model:
-                action, _ = model.predict(obs, deterministic=True)
-            else:
-                action = env.action_space.sample()
+            if not use_default:
+                if model:
+                    action, _ = model.predict(obs, deterministic=True)
+                else:
+                    action = env.action_space.sample()
                 
-            #take step in environment
-            obs, reward, terminated, truncated, info = env.step(action)
+                obs, reward, terminated, truncated, info = env.step(action)
+            else:
+                obs, reward, terminated, truncated, info = env.step(None)
             
             #update metrics
             total_reward += reward if isinstance(reward, (int, float)) else sum(reward.values())
@@ -79,9 +81,17 @@ def run_simulation(net_file, route_file, model_path=None, steps=3600, gui=True):
                 print(f"Step {step_count}, reward: {reward}")
         
         #save metrics to csv
-        model_name = os.path.basename(model_path).split('.')[0] if model_path else "random"
+        if use_default:
+            model_name = "default"
+        else:
+            model_name = os.path.basename(model_path).split('.')[0] if model_path else "random"
+
+        src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        graphs_dir = os.path.join(src_dir, "graphs")
+        os.makedirs(graphs_dir, exist_ok=True)
+
         df = pd.DataFrame(metrics)
-        csv_path = os.path.join("graphs", f"sim_results_{model_name}.csv")
+        csv_path = os.path.join(graphs_dir, f"sim_results_{model_name}.csv")
         df.to_csv(csv_path, index=False)
         
         #plot results
@@ -94,7 +104,7 @@ def run_simulation(net_file, route_file, model_path=None, steps=3600, gui=True):
             plt.xlabel('Simulation Step')
             plt.ylabel('Value')
         plt.tight_layout()
-        plt.savefig(f"performance_{model_name}.png")
+        plt.savefig(os.path.join(graphs_dir, f"performance_{model_name}.png"))
         print(f"Performance metrics saved to sim_results_{model_name}.csv and performance_{model_name}.png")
         
         print(f"Simulation completed: {step_count} steps with total reward: {total_reward}")
@@ -114,6 +124,7 @@ def main():
     parser.add_argument("--model", help="Path to trained model (.zip)")
     parser.add_argument("--steps", type=int, default=3600, help="Simulation steps")
     parser.add_argument("--no-gui", action="store_true", help="Disable GUI")
+    parser.add_argument("--default", action="store_true", help="Use default SUMO traffic light controller")
     
     args = parser.parse_args()
     
@@ -122,10 +133,14 @@ def main():
         route_file=args.route,
         model_path=args.model,
         steps=args.steps,
-        gui=not args.no_gui
+        gui=not args.no_gui,
+        use_default=args.default
     )
-
 if __name__ == "__main__":
     main()
 
-#python -m src.environment.sumo_runner --net src/networks/2way_single/single.net.xml --route src/networks/2way_single/single_horizontal.rou.xml --model ppo_traffic_light_model.zip
+# Run with PPO model
+#python -m src.environment.sumo_runner --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_horizontal.rou.xml --model src/agent/ppo_traffic_light_model.zip --steps 8000
+
+# Run with default controller
+#python -m src.environment.sumo_runner --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_horizontal.rou.xml --default --steps 8000

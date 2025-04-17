@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import argparse
+import os
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 from src.environment.sumo_env import SumoEnvironment
@@ -10,6 +12,10 @@ class CustomCallback(BaseCallback):
         self.eval_env = eval_env
         self.n_eval_episodes = n_eval_episodes
         self.eval_freq = eval_freq
+        
+        src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        graphs_dir = os.path.join(src_dir, "graphs")
+        os.makedirs(graphs_dir, exist_ok=True)
         
         #track all metrics
         self.rewards = []
@@ -64,7 +70,7 @@ class CustomCallback(BaseCallback):
                 obs, reward, terminated, truncated, info = self.eval_env.step(action)
                 done = terminated or truncated
                 
-                # Update metrics
+                #update metrics
                 episode_reward += reward
                 
                 #get metrics from traffic light
@@ -132,15 +138,39 @@ class CustomCallback(BaseCallback):
         plt.ylabel('Throughput (vehicles)')
         
         plt.tight_layout()
-        plt.savefig(f'src/agent/plots/training_progress_{self.n_calls}.png')
+        src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        graphs_dir = os.path.join(src_dir, "graphs")
+        plt.savefig(os.path.join(graphs_dir, f"training_progress_{self.n_calls}.png"))
         plt.close()
 
 def main():
+    parser = argparse.ArgumentParser(description="Train a PPO agent for traffic light control")
+    parser.add_argument("--net", default="src/networks/2lane_junc/single.net.xml", 
+                        help="Path to .net.xml file")
+    parser.add_argument("--route", default="src/networks/2lane_junc/single_horizontal.rou.xml", 
+                        help="Path to .rou.xml file")
+    parser.add_argument("--steps", type=int, default=2500, 
+                        help="Simulation steps per episode")
+    parser.add_argument("--total", type=int, default=100000, 
+                        help="Total training timesteps")
+    parser.add_argument("--eval-freq", type=int, default=5000, 
+                        help="Evaluation frequency")
+    parser.add_argument("--output", default="src/agent/ppo_traffic_light_model", 
+                        help="Path to save trained model")
+    
+    args = parser.parse_args()
+    
+    print(f"Training with network: {args.net}")
+    print(f"Route file: {args.route}")
+    print(f"Steps per episode: {args.steps}")
+    print(f"Total training steps: {args.total}")
+    
+    #create environment
     env = SumoEnvironment(
-        net_file='src/networks/2way_single/single.net.xml',
-        route_file='src/networks/2way_single/single_horizontal.rou.xml',
+        net_file=args.net,
+        route_file=args.route,
         use_gui=False,
-        num_seconds=3600,
+        num_seconds=args.steps,
         max_green=40,
         min_green=5,
         yellow_time=2
@@ -148,17 +178,17 @@ def main():
     
     #create evaluation environment
     eval_env = SumoEnvironment(
-        net_file='src/networks/2way_single/single.net.xml',
-        route_file='src/networks/2way_single/single_horizontal.rou.xml',
+        net_file=args.net,
+        route_file=args.route,
         use_gui=False,
-        num_seconds=3600,
+        num_seconds=args.steps,
         max_green=40,
         min_green=5,
         yellow_time=2
     )
     
     #create callback for evaluation
-    callback = CustomCallback(eval_env, eval_freq=10000)
+    callback = CustomCallback(eval_env, eval_freq=args.eval_freq)
     
     #create agent
     model = PPO(
@@ -170,18 +200,20 @@ def main():
         batch_size=64,
         n_epochs=10,
         gamma=0.99,
-        tensorboard_log="src/agent/ppo_traffic_light_tensorboard/"
+        gae_lambda=0.95,
+        clip_range=0.2,
+        ent_coef=0.01
     )
     
     try:
         #train agent
         print("Starting training with composite reward (press Ctrl+C to stop early)...")
-        model.learn(total_timesteps=500000, callback=callback)
+        model.learn(total_timesteps=args.total, callback=callback)
     except KeyboardInterrupt:
         print("\nTraining interrupted. Saving model...")
     finally:
         #save trained model
-        model_path = "src/agent/models/ppo_traffic_light_model"
+        model_path = args.output
         print(f"Saving model to {model_path}")
         model.save(model_path)
         
@@ -192,4 +224,8 @@ def main():
 if __name__ == "__main__":
     main()
 
-# run with: python -m src.agent.training
+# Run with default parameters:
+# python -m src.agent.training
+#
+# Run with custom parameters:
+# python -m src.agent.training --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_vertical.rou.xml --steps 3000 --total 150000
