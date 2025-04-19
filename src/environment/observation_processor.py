@@ -7,7 +7,7 @@ class Observation:
         self.max_wait_time = max_wait_time
     
     def normalise(self, observation):
-        #normalise all observation values to [0,1] range"""
+        #normalise all observation values to [0,1] range
         norm_obs = observation.copy()
         
         #normalise lane data

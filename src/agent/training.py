@@ -173,7 +173,7 @@ def main():
         num_seconds=args.steps,
         max_green=40,
         min_green=5,
-        yellow_time=2
+        yellow_time=3
     )
     
     #create evaluation environment
@@ -184,7 +184,7 @@ def main():
         num_seconds=args.steps,
         max_green=40,
         min_green=5,
-        yellow_time=2
+        yellow_time=3
     )
     
     #create callback for evaluation
@@ -195,14 +195,14 @@ def main():
         "MultiInputPolicy",
         env,
         verbose=1,
-        learning_rate=3e-4,
+        learning_rate=2e-4,
         n_steps=2048,
         batch_size=64,
         n_epochs=10,
-        gamma=0.99,
-        gae_lambda=0.95,
+        gamma=0.95,
+        gae_lambda=0.9,
         clip_range=0.2,
-        ent_coef=0.01
+        ent_coef=0.1
     )
     
     try:

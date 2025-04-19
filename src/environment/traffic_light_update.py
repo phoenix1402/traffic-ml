@@ -13,49 +13,110 @@ class TrafficLights:
         self.yellow_time = yellow_time #duration of yellow phase in seconds
         self.max_green_time = max_green_time #maximum green phase duration
         self.min_green_time = min_green_time #minimum green phase duration
-        self.reward_func = reward_func #type of reward function to use
+        self.reward_func = reward_func
         self.last_wait_time = 0
+        self.is_yellow = False
+        self.next_green_phase = 0
+        
+        self.initialise_phases()
         
         #define action and observation spaces for this traffic light
-        self.action_space = gym.spaces.Discrete(2)
-        
-        self.observation_space = None
-        self.initialise_phases()
+        self.action_space = gym.spaces.Discrete(len(self.green_phases))
         
     def initialise_phases(self):
         #initialise traffic light phases from sumo network data
-        program_logics = traci.trafficlight.getAllProgramLogics(self.id) #get all phases from sumo
+        program_logics = traci.trafficlight.getAllProgramLogics(self.id) # get all phases from sumo
         if not program_logics:
             raise ValueError(f"No program logics found for traffic light {self.id}. Check your network file.")
                 
-        self.all_phases = program_logics[0].phases
+        self.original_phases = program_logics[0].phases
         
         #get the green phases (exclude yellow/red phases)
         self.green_phases = []
-        for i, phase in enumerate(self.all_phases):
-            #check if this is a green phase
+        green_phase_objects = []
+        for i, phase in enumerate(self.original_phases):
             if 'G' in phase.state:
                 self.green_phases.append(i)
+                green_phase_objects.append(phase)
         
-        #if no green phases found, signal an error
         if not self.green_phases:
             raise ValueError(f"No green phases found for traffic light {self.id}. Check your network file.")
-                
-        #initialise phase tracking variables
-        self.current_phase_index = 0
-        self.time_since_last_change = 0
-        self.current_phase_duration = 0
         
-        #define observation space based on controlled lanes
+        self.yellow_dict = {}
+        self.all_phases = list(green_phase_objects)
+        
+        for i, p1 in enumerate(green_phase_objects):
+            for j, p2 in enumerate(green_phase_objects):
+                if i == j: continue
+                
+                yellow_state = ""
+                for s in range(len(p1.state)):
+                    if (p1.state[s] in ["G", "g"]) and (p2.state[s] in ["r", "s"]):
+                        yellow_state += "y"
+                    else:
+                        yellow_state += p1.state[s]
+                
+                self.yellow_dict[(i, j)] = len(self.all_phases)
+                self.all_phases.append(traci.trafficlight.Phase(self.yellow_time * 1000, yellow_state))
+                
+        self.current_green_phase = 0
+        self.time_since_last_change = 0
+        
         self.setup_observation_space()
+        self.custom_phases()
+        
+    def custom_phases(self):
+        #update the traffic light program in SUMO with custom phases
+        try:
+            program = traci.trafficlight.getAllProgramLogics(self.id)[0]
+            
+            self.original_phase_count = len(program.phases)
+            print(f"Traffic light {self.id} has {self.original_phase_count} phases in SUMO")
+            
+            self.phase_map = {}
+            for i, green_idx in enumerate(self.green_phases):
+                self.phase_map[i] = green_idx
+            
+            traci.trafficlight.setPhase(self.id, self.green_phases[0])
+            
+            self.yellow_phase()
+        except Exception as e:
+            print(f"Error updating traffic light program: {e}")
+    
+    def yellow_phase(self):
+        self.yellow_dict = {}
+        
+        #check if the original phases already include yellow phases
+        yellow_phases = []
+        for i, phase in enumerate(self.original_phases):
+            if 'y' in phase.state and 'G' not in phase.state and 'g' not in phase.state:
+                yellow_phases.append(i)
+        
+        print(f"Found {len(yellow_phases)} yellow phases in original program")
+        
+        for i, src_idx in enumerate(self.green_phases):
+            for j, dst_idx in enumerate(self.green_phases):
+                if i == j:
+                    continue
+                    
+                yellow_idx = None
+                for y_idx in yellow_phases:
+                    if y_idx > src_idx and y_idx < dst_idx:
+                        yellow_idx = y_idx
+                        break
+                
+                if yellow_idx is not None:
+                    self.yellow_dict[(i, j)] = yellow_idx
+                else:
+                    self.yellow_dict[(i, j)] = dst_idx
+        
+        print(f"Created simplified yellow_dict with {len(self.yellow_dict)} transitions")
 
     def setup_observation_space(self):
         #setup observation space based on number of lanes
         controlled_lanes = traci.trafficlight.getControlledLanes(self.id)
         num_lanes = len(controlled_lanes)
         
-        #for each lane: vehicle_count, mean_speed, occupancy, waiting_time
-        #plus current phase and time since change
         self.observation_space = gym.spaces.Dict({
             'lane_data': gym.spaces.Box(
                 low=0, 
@@ -76,29 +137,59 @@ class TrafficLights:
         #update traffic light based on action
         self.time_since_last_change += 1
         
-        if action is None:
+        #handle yellow phase transition completion
+        if self.is_yellow and self.time_since_last_change >= self.yellow_time:
+            actual_phase_index = self.phase_map.get(int(self.next_green_phase), int(self.next_green_phase))
+            
+            max_phase = len(self.original_phases) - 1
+            if actual_phase_index > max_phase:
+                print(f"Warning: Using target phase {self.next_green_phase} directly as {actual_phase_index} exceeds {max_phase}")
+                actual_phase_index = min(max_phase, int(self.next_green_phase))
+            
+            #transition to the next green phase
+            traci.trafficlight.setPhase(self.id, actual_phase_index)
+            self.current_green_phase = self.next_green_phase
+            self.time_since_last_change = 0
+            self.is_yellow = False
+            return
+            
+        if action is None or self.is_yellow:
             return
 
-        #if action is provided (agent decided to change phase)
-        if action is not None and action > 0:
-            #only change if minimum green time has passed
-            if self.time_since_last_change >= self.min_green_time:
+        if action >= 0 and action < len(self.green_phases):
+            target_green_index = int(action)
+            
+            #only change if minimum green time has passed and it's a different phase
+            if self.time_since_last_change >= self.min_green_time and target_green_index != int(self.current_green_phase):
                 try:
-                    current_sumo_phase = traci.trafficlight.getPhase(self.id)
-                    next_phase_index = (current_sumo_phase + 1) % len(self.all_phases)
-                    traci.trafficlight.setPhase(self.id, next_phase_index)
+                    #get yellow transition phase
+                    key = (int(self.current_green_phase), int(target_green_index))
+                    if key not in self.yellow_dict:
+                        print(f"Warning: Missing yellow transition for {key}, using target directly")
+                        yellow_phase_index = self.phase_map.get(int(target_green_index), int(target_green_index))
+                    else:
+                        yellow_phase_index = self.yellow_dict[key]
                     
-                    #update internal tracking variables
-                    if next_phase_index in self.green_phases:
-                        self.current_phase_index = self.green_phases.index(next_phase_index)
+                    #validate the phase index
+                    max_phase = len(self.original_phases) - 1
+                    if yellow_phase_index > max_phase:
+                        print(f"Warning: Phase {yellow_phase_index} exceeds maximum {max_phase}, using direct transition")
+                        yellow_phase_index = self.phase_map.get(int(target_green_index), int(target_green_index))
+                        
+                    #set the phase and update tracking
+                    self.next_green_phase = target_green_index
+                    traci.trafficlight.setPhase(self.id, yellow_phase_index)
                     self.time_since_last_change = 0
+                    self.is_yellow = True
                     
                 except Exception as e:
                     print(f"Error updating traffic light {self.id}: {e}")
         
         #force phase change if max green time exceeded
         elif self.time_since_last_change >= self.max_green_time:
-            self.update(action=1)
+            #choose the next phase (cycling through green phases)
+            next_green = (int(self.current_green_phase) + 1) % len(self.green_phases)
+            self.update(next_green)
 
     def get_observation(self):
         #generate observations for the traffic light state
@@ -127,7 +218,7 @@ class TrafficLights:
         #add current phase index and time since last change
         observation = {
             'lane_data': np.array(lane_data, dtype=np.float32),
-            'current_phase': self.current_phase_index,
+            'current_phase': self.current_green_phase,
             'time_since_change': np.array([self.time_since_last_change], dtype=np.float32)
         }
         
@@ -211,5 +302,6 @@ class TrafficLights:
     def reset(self):
         #reset traffic light state for a new episode
         self.time_since_last_change = 0
-        self.current_phase_index = 0
+        self.current_green_phase = 0
+        self.is_yellow = False
         self.last_wait_time = self.get_accumulated_waiting_time()

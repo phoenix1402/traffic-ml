@@ -19,7 +19,7 @@ class SumoEnvironment(gym.Env, EzPickle):
         num_seconds=3600,
         max_green=40,
         min_green=5,
-        yellow_time=2,
+        yellow_time=3,
         reward_func="waiting_time_diff",
         render_mode=None
     ):

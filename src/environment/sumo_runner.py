@@ -22,7 +22,7 @@ def run_simulation(net_file, route_file, model_path=None, steps=3600, gui=True, 
             num_seconds=steps,
             max_green=30,
             min_green=5,
-            yellow_time=2
+            yellow_time=3
         )
         
         #reset environment
