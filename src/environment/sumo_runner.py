@@ -246,6 +246,9 @@ def main():
         use_default=args.default
     )
 
+if __name__ == "__main__":
+    main()
+    
 # Run with PPO model
 #python -m src.environment.sumo_runner --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_horizontal.rou.xml --model src/agent/ppo_traffic_light_model.zip --steps 8000
 

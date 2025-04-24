@@ -145,13 +145,17 @@ class SumoEnvironment(gym.Env, EzPickle):
             raise
         
     def step(self, action):
-        #apply actions to traffic lights
-        if len(self.traffic_signal_ids) == 1:
-            #single traffic light case
+        # apply actions to traffic lights
+        if action is None:
+            # Default controller mode - update without specific actions
+            for ts_id in self.traffic_signal_ids:
+                self.traffic_lights[ts_id].update(None)
+        elif len(self.traffic_signal_ids) == 1:
+            # single traffic light case
             ts_id = self.traffic_signal_ids[0]
             self.traffic_lights[ts_id].update(action)
         else:
-            #multiple traffic lights case
+            # multiple traffic lights case
             for ts_id, act in action.items():
                 self.traffic_lights[ts_id].update(act)
                 
