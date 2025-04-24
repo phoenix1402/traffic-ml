@@ -4,12 +4,25 @@ import traceback
 from stable_baselines3 import PPO
 import pandas as pd
 import matplotlib.pyplot as plt
+import traci
+import numpy as np
 
 from src.environment.sumo_env import SumoEnvironment
 
-def run_simulation(net_file, route_file, model_path=None, steps=3600, gui=True, use_default=False):
-    print(f"Starting simulation with network: {net_file}")
-    print(f"Route file: {route_file}")
+def run_simulation(net_file=None, route_file=None, config_file=None, model_path=None, steps=3600, gui=True, use_default=False):
+    """
+    Run SUMO simulation with either direct net/route files or a config file
+    """
+    if config_file:
+        print(f"Starting simulation with config file: {config_file}")
+        # Check if the config likely contains pedestrian data
+        has_pedestrians = "persontrips" in config_file or "peds" in config_file
+        print(f"Pedestrian simulation detected: {has_pedestrians}")
+    else:
+        print(f"Starting simulation with network: {net_file}")
+        print(f"Route file: {route_file}")
+        has_pedestrians = "persontrips" in route_file or "peds" in route_file
+    
     print(f"GUI enabled: {gui}")
     print(f"Using default traffic light controller: {use_default}")
     
@@ -18,11 +31,13 @@ def run_simulation(net_file, route_file, model_path=None, steps=3600, gui=True, 
         env = SumoEnvironment(
             net_file=net_file,
             route_file=route_file,
+            config_file=config_file,
             use_gui=gui,
             num_seconds=steps,
             max_green=30,
             min_green=5,
-            yellow_time=3
+            yellow_time=4,
+            has_pedestrians=has_pedestrians
         )
         
         #reset environment
@@ -40,14 +55,21 @@ def run_simulation(net_file, route_file, model_path=None, steps=3600, gui=True, 
         total_reward = 0
         step_count = 0
         done = False
-        
+
         metrics = {
-            'step': [], 
-            'reward': [], 
+            'step': [],
+            'throughput': [],
             'waiting_time': [],
             'queue_length': [], 
-            'average_speed': []
+            'average_speed': [],
+            'collisions': [],
+            'emergency_stops': []
         }
+        
+        #add pedestrian metrics if needed
+        if has_pedestrians:
+            metrics['pedestrian_waiting_time'] = []
+            metrics['pedestrian_count'] = []
 
         while not done:
             if not use_default:
@@ -65,26 +87,54 @@ def run_simulation(net_file, route_file, model_path=None, steps=3600, gui=True, 
             step_count += 1
             done = terminated or truncated
         
-            #collect metrics
-            metrics['step'].append(step_count)
-            metrics['reward'].append(reward)
-        
-            #get traffic performance metrics
             if len(env.traffic_signal_ids) > 0:
                 ts_id = env.traffic_signal_ids[0]
-                metrics['waiting_time'].append(env.traffic_lights[ts_id].get_accumulated_waiting_time())
-                metrics['queue_length'].append(env.traffic_lights[ts_id].get_queue_length())
-                metrics['average_speed'].append(env.traffic_lights[ts_id].get_average_speed())
+                ts = env.traffic_lights[ts_id]
+                
+                # Update step metric
+                metrics['step'].append(step_count)
+                
+                #collect existing metrics
+                metrics['waiting_time'].append(ts.get_accumulated_waiting_time())
+                metrics['queue_length'].append(ts.get_queue_length())
+                metrics['average_speed'].append(ts.get_average_speed())
+                metrics['throughput'].append(ts.get_throughput())
+                
+                #get collision data from SUMO simulation
+                metrics['collisions'].append(traci.simulation.getCollidingVehiclesNumber())
+                
+                #calculate emergency stops (vehicles with deceleration > 4.5 m/s²)
+                emergency_stops = 0
+                for veh_id in traci.vehicle.getIDList():
+                    if traci.vehicle.getAcceleration(veh_id) < -4.5:
+                        emergency_stops += 1
+                metrics['emergency_stops'].append(emergency_stops)
+                
+                # Collect pedestrian metrics if available
+                if has_pedestrians:
+                    try:
+                        ped_wait_time = ts.get_pedestrian_waiting_time()
+                        metrics['pedestrian_waiting_time'].append(ped_wait_time)
+                        metrics['pedestrian_count'].append(len(traci.person.getIDList()))
+                    except Exception as e:
+                        # Fallback if pedestrian data access fails
+                        metrics['pedestrian_waiting_time'].append(0)
+                        metrics['pedestrian_count'].append(0)
+                        print(f"Error collecting pedestrian data: {e}")
             
             #print occasional progress
             if step_count % 100 == 0:
-                print(f"Step {step_count}, reward: {reward}")
+                print(f"Step {step_count}, throughput: {metrics['throughput'][-1] if metrics['throughput'] else 0}")
         
         #save metrics to csv
         if use_default:
             model_name = "default"
         else:
             model_name = os.path.basename(model_path).split('.')[0] if model_path else "random"
+        
+        #add pedestrian info to model name if applicable
+        if has_pedestrians:
+            model_name += "_with_peds"
 
         src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         graphs_dir = os.path.join(src_dir, "graphs")
@@ -96,13 +146,66 @@ def run_simulation(net_file, route_file, model_path=None, steps=3600, gui=True, 
         
         #plot results
         plt.figure(figsize=(15, 10))
-        metrics_to_plot = ['reward', 'waiting_time', 'queue_length', 'average_speed']
-        for i, metric in enumerate(metrics_to_plot):
-            plt.subplot(2, 2, i+1)
-            plt.plot(metrics['step'], metrics[metric])
-            plt.title(metric.replace('_', ' ').title())
+        
+        num_subplots = 6 if has_pedestrians else 4
+        subplot_rows = 3 if has_pedestrians else 2
+        
+        #traffic throughput
+        plt.subplot(subplot_rows, 2, 1)
+        plt.plot(metrics['step'], metrics['throughput'], 'b-', linewidth=2)
+        plt.title('Traffic Throughput')
+        plt.xlabel('Simulation Step')
+        plt.ylabel('Vehicles Per Step')
+        plt.grid(True)
+        
+        #safety metrics
+        plt.subplot(subplot_rows, 2, 2)
+        #grouped bar chart for collisions and emergency stops
+        bar_width = 0.35
+        plt.bar(['Collisions'], [sum(metrics['collisions'])], bar_width, color='r', label='Collisions')
+        plt.bar(['Emergency Stops'], [sum(metrics['emergency_stops'])], bar_width, color='y', label='Emergency Stops')
+        plt.title('Safety Metrics')
+        plt.ylabel('Count')
+        plt.legend()
+        plt.grid(True, axis='y')
+        
+        #vehicle waiting time and queue length
+        plt.subplot(subplot_rows, 2, 3)
+        plt.plot(metrics['step'], metrics['waiting_time'], 'r-', linewidth=2, label='Waiting Time')
+        plt.plot(metrics['step'], metrics['queue_length'], 'g-', linewidth=2, label='Queue Length')
+        plt.title('Traffic Congestion Metrics')
+        plt.xlabel('Simulation Step')
+        plt.ylabel('Count')
+        plt.legend()
+        plt.grid(True)
+        
+        #cumulative throughput
+        plt.subplot(subplot_rows, 2, 4)
+        cumulative_throughput = np.cumsum(metrics['throughput'])
+        plt.plot(metrics['step'], cumulative_throughput, 'g-', linewidth=2)
+        plt.title('Cumulative Throughput')
+        plt.xlabel('Simulation Step')
+        plt.ylabel('Total Vehicles')
+        plt.grid(True)
+        
+        #add pedestrian charts if data is available
+        if has_pedestrians:
+            #pedestrian waiting time
+            plt.subplot(subplot_rows, 2, 5)
+            plt.plot(metrics['step'], metrics['pedestrian_waiting_time'], 'm-', linewidth=2)
+            plt.title('Pedestrian Waiting Time')
             plt.xlabel('Simulation Step')
-            plt.ylabel('Value')
+            plt.ylabel('Count')
+            plt.grid(True)
+            
+            #pedestrian count
+            plt.subplot(subplot_rows, 2, 6)
+            plt.plot(metrics['step'], metrics['pedestrian_count'], 'c-', linewidth=2)
+            plt.title('Pedestrian Count')
+            plt.xlabel('Simulation Step')
+            plt.ylabel('Number of Pedestrians')
+            plt.grid(True)
+        
         plt.tight_layout()
         plt.savefig(os.path.join(graphs_dir, f"performance_{model_name}.png"))
         print(f"Performance metrics saved to sim_results_{model_name}.csv and performance_{model_name}.png")
@@ -119,25 +222,29 @@ def run_simulation(net_file, route_file, model_path=None, steps=3600, gui=True, 
 
 def main():
     parser = argparse.ArgumentParser(description="Run SUMO traffic simulation")
-    parser.add_argument("--net", required=True, help="Path to .net.xml file")
-    parser.add_argument("--route", required=True, help="Path to .rou.xml file")
+    parser.add_argument("--net", help="Path to .net.xml file")
+    parser.add_argument("--route", help="Path to .rou.xml file")
+    parser.add_argument("--config", help="Path to .sumocfg file (alternative to --net and --route)")
     parser.add_argument("--model", help="Path to trained model (.zip)")
-    parser.add_argument("--steps", type=int, default=3600, help="Simulation steps")
+    parser.add_argument("--steps", type=int, default=5000, help="Simulation steps")
     parser.add_argument("--no-gui", action="store_true", help="Disable GUI")
     parser.add_argument("--default", action="store_true", help="Use default SUMO traffic light controller")
     
     args = parser.parse_args()
     
+    #check that we have either a config file or both net and route files
+    if not args.config and (not args.net or not args.route):
+        parser.error("Either --config or both --net and --route must be specified")
+    
     run_simulation(
         net_file=args.net,
         route_file=args.route,
+        config_file=args.config,
         model_path=args.model,
         steps=args.steps,
         gui=not args.no_gui,
         use_default=args.default
     )
-if __name__ == "__main__":
-    main()
 
 # Run with PPO model
 #python -m src.environment.sumo_runner --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_horizontal.rou.xml --model src/agent/ppo_traffic_light_model.zip --steps 8000

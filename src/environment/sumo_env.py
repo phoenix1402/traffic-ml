@@ -9,19 +9,19 @@ from src.environment.traffic_light_update import TrafficLights
 from src.environment.observation_processor import Observation
 
 class SumoEnvironment(gym.Env, EzPickle):
-    metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': 10}
-    
     def __init__(
         self,
-        net_file,
-        route_file,
+        net_file=None,
+        route_file=None,
+        config_file=None,
         use_gui=False,
         num_seconds=3600,
         max_green=40,
         min_green=5,
         yellow_time=3,
         reward_func="waiting_time_diff",
-        render_mode=None
+        render_mode=None,
+        has_pedestrians=False
     ):
         
         EzPickle.__init__(self, net_file, route_file, use_gui, num_seconds, 
@@ -29,6 +29,7 @@ class SumoEnvironment(gym.Env, EzPickle):
         
         self.net_file = net_file
         self.route_file = route_file
+        self.config_file = config_file
         self.use_gui = use_gui
         self.num_seconds = num_seconds
         self.max_green = max_green
@@ -36,24 +37,35 @@ class SumoEnvironment(gym.Env, EzPickle):
         self.yellow_time = yellow_time
         self.reward_func = reward_func
         self.render_mode = render_mode
-        
-        #connect to sumo
+        self.has_pedestrians = has_pedestrians
+    
+        # Set up sumo command
         self.sumo_binary = "sumo-gui" if self.use_gui else "sumo"
-        self.sumo_cmd = [
-            self.sumo_binary, 
-            "-n", self.net_file,
-            "-r", self.route_file,
-            "--no-step-log", "true",
-            "--random", "false",
-            "--start", "true",
-            "--quit-on-end", "true"
-        ]
         
-        #start sumo to get infrastructure info
+        if self.config_file:
+            self.sumo_cmd = [
+                self.sumo_binary,
+                "-c", self.config_file,
+                "--no-step-log", "true",
+                "--random", "false",
+                "--start", "true",
+                "--quit-on-end", "true"
+            ]
+        else:
+            self.sumo_cmd = [
+                self.sumo_binary, 
+                "-n", self.net_file,
+                "-r", self.route_file,
+                "--no-step-log", "true",
+                "--random", "false",
+                "--start", "true",
+                "--quit-on-end", "true"
+            ]
+        
         traci.start(self.sumo_cmd)
         self.traffic_signal_ids = list(traci.trafficlight.getIDList())
         
-        #create traffic light objects
+        #create traffic light objects with pedestrian support if needed
         self.traffic_lights = {}
         for ts_id in self.traffic_signal_ids:
             self.traffic_lights[ts_id] = TrafficLights(
@@ -61,11 +73,12 @@ class SumoEnvironment(gym.Env, EzPickle):
                 yellow_time=self.yellow_time,
                 max_green_time=self.max_green,
                 min_green_time=self.min_green,
-                reward_func=self.reward_func
+                reward_func=self.reward_func,
+                has_pedestrians=self.has_pedestrians
             )
             
         #define observation and action spaces (for multiple traffic lights)
-        self.observation_normaliser = Observation()
+        self.obs_processor = Observation()
         self.define_spaces()
         
         #initial state
@@ -184,12 +197,12 @@ class SumoEnvironment(gym.Env, EzPickle):
             # Single traffic light case
             ts_id = self.traffic_signal_ids[0]
             obs = self.traffic_lights[ts_id].get_observation()
-            return self.observation_normaliser.normalise(obs)
+            return self.obs_processor.normalise(obs)
         else:
-            # Multiple traffic lights case
+            #multiple traffic lights case
             obs = {}
             for ts_id, ts in self.traffic_lights.items():
-                obs[ts_id] = self.observation_normaliser.normalise(ts.get_observation())
+                obs[ts_id] = self.obs_processor.normalise(ts.get_observation())
             return obs
         
     def close(self):
