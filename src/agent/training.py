@@ -24,7 +24,7 @@ class CustomCallback(BaseCallback):
         self.waiting_times = []
         self.queue_lengths = []
         self.avg_speeds = []
-        self.throughputs = []
+        self.pressures = []
         
         #add pedestrian metrics if needed
         if has_pedestrians:
@@ -65,14 +65,14 @@ class CustomCallback(BaseCallback):
             self.waiting_times.append(metrics['waiting_time'])
             self.queue_lengths.append(metrics['queue_length'])
             self.avg_speeds.append(metrics['avg_speed'])
-            self.throughputs.append(metrics['throughput'])
+            self.pressures.append(metrics['pressure'])
             
             #log results
             self.logger.record('eval/mean_reward', metrics['reward'])
             self.logger.record('eval/mean_waiting_time', metrics['waiting_time'])
             self.logger.record('eval/mean_queue_length', metrics['queue_length'])
             self.logger.record('eval/mean_avg_speed', metrics['avg_speed'])
-            self.logger.record('eval/mean_throughput', metrics['throughput'])
+            self.logger.record('eval/mean_pressures', metrics['pressure'])
             
             #log pedestrian metrics if available
             if self.has_pedestrians:
@@ -91,7 +91,7 @@ class CustomCallback(BaseCallback):
         waiting_times = []
         queue_lengths = []
         avg_speeds = []
-        throughputs = []
+        pressures = []
         
         #initialise pedestrian metrics if needed
         if self.has_pedestrians:
@@ -105,7 +105,7 @@ class CustomCallback(BaseCallback):
             episode_waiting_time = 0
             episode_queue_length = 0
             episode_avg_speed = 0
-            episode_throughput = 0
+            episode_pressure = 0
             
             #initialise episode pedestrian metrics
             if self.has_pedestrians:
@@ -132,12 +132,12 @@ class CustomCallback(BaseCallback):
                     waiting_time = traffic_light.get_accumulated_waiting_time()
                     queue_length = traffic_light.get_queue_length()
                     avg_speed = traffic_light.get_average_speed()
-                    throughput = traffic_light.get_throughput()
+                    pressure = traffic_light.get_pressure()
                     
                     episode_waiting_time += waiting_time
                     episode_queue_length += queue_length
                     episode_avg_speed += avg_speed
-                    episode_throughput += throughput
+                    episode_pressure += pressure
                     
                     if self.has_pedestrians:
                         try:
@@ -154,7 +154,7 @@ class CustomCallback(BaseCallback):
             waiting_times.append(episode_waiting_time)
             queue_lengths.append(episode_queue_length)
             avg_speeds.append(episode_avg_speed)
-            throughputs.append(episode_throughput)
+            pressures.append(episode_pressure)
             
             #add pedestrian metrics if available
             if self.has_pedestrians:
@@ -167,7 +167,7 @@ class CustomCallback(BaseCallback):
             'waiting_time': np.mean(waiting_times),
             'queue_length': np.mean(queue_lengths),
             'avg_speed': np.mean(avg_speeds),
-            'throughput': np.mean(throughputs)
+            'pressure': np.mean(pressures)
         }
         
         if self.has_pedestrians:
@@ -208,10 +208,10 @@ class CustomCallback(BaseCallback):
         plt.ylabel('Speed (m/s)')
         
         plt.subplot(num_rows, num_cols, 5)
-        plt.plot(self.throughputs)
-        plt.title('Mean Throughput')
+        plt.plot(self.pressures)
+        plt.title('Mean Pressure')
         plt.xlabel('Evaluation')
-        plt.ylabel('Throughput (vehicles)')
+        plt.ylabel('Pressure')
         
         if self.has_pedestrians:
             plt.subplot(num_rows, num_cols, 7)
@@ -424,4 +424,4 @@ if __name__ == "__main__":
 # python -m src.agent.training --net src/networks/cross3ltl/net.net.xml --route src/networks/cross3ltl/input_routes.rou.xml --steps 3000 --total 100000 --eval-freq 5000
 
 # 2 intersections:
-# python -m src.agent.training --net src/networks/2x2/2x2.net.xml --route src/networks/2x2/2x2.rou.xml --steps 5000 --total 150000 --eval-freq 1000
+# python -m src.agent.training --net src/networks/2x2/2x2.net.xml --route src/networks/2x2/2x2.rou.xml --steps 5000 --total 150000 --eval-freq 10000
