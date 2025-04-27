@@ -5,6 +5,7 @@ import os
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 from src.environment.sumo_env import SumoEnvironment
+from src.environment.env_wrappers import MultiTrafficLightWrapper
 
 class CustomCallback(BaseCallback):
     def __init__(self, eval_env, n_eval_episodes=5, eval_freq=1000, verbose=1, has_pedestrians=False):
@@ -30,7 +31,33 @@ class CustomCallback(BaseCallback):
             self.ped_waiting_times = []
             self.ped_counts = []
 
+        self.policy_losses = []
+        self.value_losses = []
+        self.entropy_losses = []
+        self.approx_kl_divs = []
+        self.explained_variances = []
+        self.learning_rates = []
+
     def _on_step(self):
+        if hasattr(self.model, "logger") and hasattr(self.model.logger, "name_to_value"):
+            metrics_dict = self.model.logger.name_to_value
+            
+            #store the metrics if they're available in the current step
+            if "train/policy_loss" in metrics_dict:
+                self.policy_losses.append(metrics_dict["train/policy_loss"])
+            if "train/value_loss" in metrics_dict:
+                self.value_losses.append(metrics_dict["train/value_loss"])
+            if "train/entropy_loss" in metrics_dict:
+                self.entropy_losses.append(metrics_dict["train/entropy_loss"])
+            elif "train/entropy" in metrics_dict:
+                self.entropy_losses.append(metrics_dict["train/entropy"])
+            if "train/approx_kl" in metrics_dict:
+                self.approx_kl_divs.append(metrics_dict["train/approx_kl"])
+            if "train/explained_variance" in metrics_dict:
+                self.explained_variances.append(metrics_dict["train/explained_variance"])
+            if "train/learning_rate" in metrics_dict:
+                self.learning_rates.append(metrics_dict["train/learning_rate"])
+
         if self.n_calls % self.eval_freq == 0:
             #evaluate agent with all metrics
             metrics = self.evaluate()
@@ -66,7 +93,7 @@ class CustomCallback(BaseCallback):
         avg_speeds = []
         throughputs = []
         
-        #initialize pedestrian metrics if needed
+        #initialise pedestrian metrics if needed
         if self.has_pedestrians:
             pedestrian_waiting_times = []
             pedestrian_counts = []
@@ -80,7 +107,7 @@ class CustomCallback(BaseCallback):
             episode_avg_speed = 0
             episode_throughput = 0
             
-            #initialize episode pedestrian metrics
+            #initialise episode pedestrian metrics
             if self.has_pedestrians:
                 episode_ped_waiting_time = 0
                 episode_ped_count = 0
@@ -198,7 +225,52 @@ class CustomCallback(BaseCallback):
             plt.title('Mean Pedestrian Count')
             plt.xlabel('Evaluation')
             plt.ylabel('Number of Pedestrians')
-        
+
+        if len(self.policy_losses) > 0:
+            plt.figure(figsize=(15, 10))
+            
+            #policy Loss
+            plt.subplot(2, 3, 1)
+            plt.plot(self.policy_losses)
+            plt.title('Policy Loss')
+            plt.xlabel('Updates')
+            plt.ylabel('Loss')
+            plt.grid(True)
+            
+            #value Loss
+            plt.subplot(2, 3, 2)
+            plt.plot(self.value_losses)
+            plt.title('Value Function Loss')
+            plt.xlabel('Updates') 
+            plt.ylabel('Loss')
+            plt.grid(True)
+            
+            #entropy
+            plt.subplot(2, 3, 3)
+            plt.plot(self.entropy_losses)
+            plt.title('Entropy')
+            plt.xlabel('Updates')
+            plt.ylabel('Entropy')
+            plt.grid(True)
+            
+            #approximate KL divergence
+            if len(self.approx_kl_divs) > 0:
+                plt.subplot(2, 3, 4)
+                plt.plot(self.approx_kl_divs)
+                plt.title('Approximate KL Divergence')
+                plt.xlabel('Updates')
+                plt.ylabel('KL Divergence')
+                plt.grid(True)
+            
+            #explained Variance
+            if len(self.explained_variances) > 0:
+                plt.subplot(2, 3, 6)
+                plt.plot(self.explained_variances)
+                plt.title('Explained Variance')
+                plt.xlabel('Updates')
+                plt.ylabel('Variance')
+                plt.grid(True)
+            
         plt.tight_layout()
         src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         graphs_dir = os.path.join(src_dir, "graphs")
@@ -220,7 +292,7 @@ def main():
                         help="Total training timesteps")
     parser.add_argument("--eval-freq", type=int, default=5000, 
                         help="Evaluation frequency")
-    parser.add_argument("--output", default="src/agent/ppo_traffic_light_model", 
+    parser.add_argument("--output", default="src/agent/trained_models/ppo_traffic_light_model", 
                         help="Path to save trained model")
     
     args = parser.parse_args()
@@ -251,7 +323,7 @@ def main():
         "use_gui": False,
         "num_seconds": args.steps,
         "max_green": 40,
-        "min_green": 5,
+        "min_green": 10,
         "yellow_time": 4,
         "has_pedestrians": has_pedestrians
     }
@@ -264,9 +336,11 @@ def main():
     
     #create environment
     env = SumoEnvironment(**env_kwargs)
+    env = MultiTrafficLightWrapper(env)
     
     #create evaluation environment
     eval_env = SumoEnvironment(**env_kwargs)
+    eval_env = MultiTrafficLightWrapper(eval_env)
     
     #create callback for evaluation
     callback = CustomCallback(eval_env, eval_freq=args.eval_freq, has_pedestrians=has_pedestrians)
@@ -293,10 +367,40 @@ def main():
     except KeyboardInterrupt:
         print("\nTraining interrupted. Saving model...")
     finally:
-        #save trained model
-        model_path = args.output
+        #create trained_models directory if it doesn't exist
+        src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        agent_dir = os.path.dirname(os.path.abspath(__file__))
+        models_dir = os.path.join(agent_dir, "trained_models")
+        os.makedirs(models_dir, exist_ok=True)
+        
+        #extract the route name from the file path
+        route_name = ""
+        if args.config:
+            #if using a config file, try to extract route name from it
+            config_path = args.config
+            try:
+                #extract primary route file name from config if possible
+                with open(config_path, 'r') as f:
+                    for line in f:
+                        if '<route-files' in line:
+                            #extract first route file from the list
+                            route_files = line.split('value="')[1].split('"')[0]
+                            first_route = route_files.split(',')[0]
+                            route_name = os.path.basename(first_route).split('.rou.xml')[0]
+                            break
+            except Exception as e:
+                print(f"Could not extract route name from config: {e}")
+                route_name = os.path.basename(config_path).split('.sumocfg')[0]
+        else:
+            #using direct route file
+            route_name = os.path.basename(args.route).split('.rou.xml')[0]
+            
+        #build the model path with the new pattern
+        model_name = f"ppo_model_{route_name}"
         if has_pedestrians:
-            model_path += "_with_peds"
+            model_name += "_with_peds"
+            
+        model_path = os.path.join(models_dir, model_name)
         print(f"Saving model to {model_path}")
         model.save(model_path)
         
@@ -314,4 +418,4 @@ if __name__ == "__main__":
 # python -m src.agent.training --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_vertical.rou.xml --steps 3000 --total 150000
 #
 # Run with config file:
-# python -m src.agent.training --config src/networks/acosta_persontrips/run.sumocfg --steps 3000 --total 150000
+# python -m src.agent.training --config src/networks/acosta_persontrips/run.sumocfg --steps 5000 --total 100000

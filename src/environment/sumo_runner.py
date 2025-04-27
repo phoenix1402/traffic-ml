@@ -8,6 +8,7 @@ import traci
 import numpy as np
 
 from src.environment.sumo_env import SumoEnvironment
+from src.environment.env_wrappers import MultiTrafficLightWrapper
 
 def run_simulation(net_file=None, route_file=None, config_file=None, model_path=None, steps=3600, gui=True, use_default=False):
     """
@@ -39,6 +40,8 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
             yellow_time=4,
             has_pedestrians=has_pedestrians
         )
+
+        env = MultiTrafficLightWrapper(env)
         
         #reset environment
         obs, _ = env.reset()
@@ -58,12 +61,13 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
 
         metrics = {
             'step': [],
-            'throughput': [],
+            'pressure': [],
             'waiting_time': [],
             'queue_length': [], 
             'average_speed': [],
             'collisions': [],
-            'emergency_stops': []
+            'emergency_stops': [],
+            'cumulative_reward': []
         }
         
         #add pedestrian metrics if needed
@@ -84,6 +88,8 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
             
             #update metrics
             total_reward += reward if isinstance(reward, (int, float)) else sum(reward.values())
+            metrics['cumulative_reward'].append(total_reward)
+            
             step_count += 1
             done = terminated or truncated
         
@@ -98,7 +104,7 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
                 metrics['waiting_time'].append(ts.get_accumulated_waiting_time())
                 metrics['queue_length'].append(ts.get_queue_length())
                 metrics['average_speed'].append(ts.get_average_speed())
-                metrics['throughput'].append(ts.get_throughput())
+                metrics['pressure'].append(ts.get_pressure())
                 
                 #get collision data from SUMO simulation
                 metrics['collisions'].append(traci.simulation.getCollidingVehiclesNumber())
@@ -124,7 +130,7 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
             
             #print occasional progress
             if step_count % 100 == 0:
-                print(f"Step {step_count}, throughput: {metrics['throughput'][-1] if metrics['throughput'] else 0}")
+                print(f"Step {step_count}, pressure: {metrics['pressure'][-1] if metrics['pressure'] else 0}")
         
         #save metrics to csv
         if use_default:
@@ -144,73 +150,72 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
         csv_path = os.path.join(graphs_dir, f"sim_results_{model_name}.csv")
         df.to_csv(csv_path, index=False)
         
-        #plot results
         plt.figure(figsize=(15, 10))
         
-        num_subplots = 6 if has_pedestrians else 4
-        subplot_rows = 3 if has_pedestrians else 2
+        #plot the main performance metrics in a 2x2 grid
+        metrics_to_plot = ['waiting_time', 'queue_length', 'average_speed', 'pressure']
         
-        #traffic throughput
-        plt.subplot(subplot_rows, 2, 1)
-        plt.plot(metrics['step'], metrics['throughput'], 'b-', linewidth=2)
-        plt.title('Traffic Throughput')
-        plt.xlabel('Simulation Step')
-        plt.ylabel('Vehicles Per Step')
-        plt.grid(True)
+        for i, metric in enumerate(metrics_to_plot):
+            plt.subplot(2, 2, i+1)
+            plt.plot(metrics['step'], metrics[metric], 'b-', linewidth=2)
+            plt.title(metric.replace('_', ' ').title())
+            plt.xlabel('Simulation Step')
+            
+            if metric in ['waiting_time', 'queue_length']:
+                plt.ylabel('Count')
+            elif metric == 'average_speed':
+                plt.ylabel('m/s')
+            elif metric == 'pressure':
+                plt.ylabel('Vehicles (out-in)')
+                
+            plt.grid(True)
         
-        #safety metrics
-        plt.subplot(subplot_rows, 2, 2)
-        #grouped bar chart for collisions and emergency stops
-        bar_width = 0.35
-        plt.bar(['Collisions'], [sum(metrics['collisions'])], bar_width, color='r', label='Collisions')
-        plt.bar(['Emergency Stops'], [sum(metrics['emergency_stops'])], bar_width, color='y', label='Emergency Stops')
-        plt.title('Safety Metrics')
-        plt.ylabel('Count')
-        plt.legend()
-        plt.grid(True, axis='y')
+        plt.tight_layout()
+        plt.savefig(os.path.join(graphs_dir, f"performance_{model_name}.png"))
         
-        #vehicle waiting time and queue length
-        plt.subplot(subplot_rows, 2, 3)
-        plt.plot(metrics['step'], metrics['waiting_time'], 'r-', linewidth=2, label='Waiting Time')
-        plt.plot(metrics['step'], metrics['queue_length'], 'g-', linewidth=2, label='Queue Length')
-        plt.title('Traffic Congestion Metrics')
-        plt.xlabel('Simulation Step')
-        plt.ylabel('Count')
-        plt.legend()
-        plt.grid(True)
+        #create a second figure for safety metrics
+        plt.figure(figsize=(15, 5))
+        safety_metrics = ['collisions', 'emergency_stops']
         
-        #cumulative throughput
-        plt.subplot(subplot_rows, 2, 4)
-        cumulative_throughput = np.cumsum(metrics['throughput'])
-        plt.plot(metrics['step'], cumulative_throughput, 'g-', linewidth=2)
-        plt.title('Cumulative Throughput')
-        plt.xlabel('Simulation Step')
-        plt.ylabel('Total Vehicles')
-        plt.grid(True)
-        
-        #add pedestrian charts if data is available
-        if has_pedestrians:
-            #pedestrian waiting time
-            plt.subplot(subplot_rows, 2, 5)
-            plt.plot(metrics['step'], metrics['pedestrian_waiting_time'], 'm-', linewidth=2)
-            plt.title('Pedestrian Waiting Time')
+        for i, metric in enumerate(safety_metrics):
+            plt.subplot(1, 2, i+1)
+            plt.plot(metrics['step'], metrics[metric], 'r-' if metric == 'collisions' else 'y-', linewidth=2)
+            plt.title(f'{metric.replace("_", " ").title()} Over Time')
             plt.xlabel('Simulation Step')
             plt.ylabel('Count')
             plt.grid(True)
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(graphs_dir, f"safety_{model_name}.png"))
+        
+        #add pedestrian charts if data is available
+        if has_pedestrians:
+            plt.figure(figsize=(15, 5))
+            plt.subplot(1, 2, 1)
+            plt.plot(metrics['step'], metrics['pedestrian_waiting_time'], 'm-', linewidth=2)
+            plt.title('Pedestrian Waiting Time')
+            plt.xlabel('Simulation Step')
+            plt.ylabel('Time (seconds)')
+            plt.grid(True)
             
-            #pedestrian count
-            plt.subplot(subplot_rows, 2, 6)
+            plt.subplot(1, 2, 2)
             plt.plot(metrics['step'], metrics['pedestrian_count'], 'c-', linewidth=2)
             plt.title('Pedestrian Count')
             plt.xlabel('Simulation Step')
             plt.ylabel('Number of Pedestrians')
             plt.grid(True)
+            
+            plt.tight_layout()
+            plt.savefig(os.path.join(graphs_dir, f"pedestrians_{model_name}.png"))
         
-        plt.tight_layout()
-        plt.savefig(os.path.join(graphs_dir, f"performance_{model_name}.png"))
-        print(f"Performance metrics saved to sim_results_{model_name}.csv and performance_{model_name}.png")
+        print(f"Performance metrics saved to:")
+        print(f"  - {csv_path}")
+        print(f"  - {os.path.join(graphs_dir, f'performance_{model_name}.png')}")
+        print(f"  - {os.path.join(graphs_dir, f'safety_{model_name}.png')}")
+        if has_pedestrians:
+            print(f"  - {os.path.join(graphs_dir, f'pedestrians_{model_name}.png')}")
         
-        print(f"Simulation completed: {step_count} steps with total reward: {total_reward}")
+        print(f"\nSimulation completed: {step_count} steps with total reward: {total_reward}")
         env.close()
         
     except Exception as e:
@@ -248,9 +253,12 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+
 # Run with PPO model
 #python -m src.environment.sumo_runner --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_horizontal.rou.xml --model src/agent/ppo_traffic_light_model.zip --steps 8000
 
 # Run with default controller
 #python -m src.environment.sumo_runner --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_horizontal.rou.xml --default --steps 8000
+
+# python -m src.environment.sumo_runner --net src/networks/2x2/2x2.net.xml --route src/networks/2x2/2x2.rou.xml --model src/agent/ppo_traffic_light_model.zip --steps 5000
+# python -m src.environment.sumo_runner --net src/networks/2x2/2x2.net.xml --route src/networks/2x2/2x2.rou.xml --default --steps 5000

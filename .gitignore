@@ -3,3 +3,4 @@ ppo_traffic_light_tensorboard/
 *.zip
 *.png
 *.csv
+*.txt

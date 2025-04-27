@@ -26,7 +26,7 @@ def compare_results(model_name, default_name="default"):
     
     plt.figure(figsize=(15, 10))
 
-    metrics_to_plot = ['waiting_time', 'queue_length', 'average_speed', 'throughput']
+    metrics_to_plot = ['waiting_time', 'queue_length', 'average_speed', 'pressure']
     
     for i, metric in enumerate(metrics_to_plot):
         plt.subplot(2, 2, i+1)
@@ -39,7 +39,7 @@ def compare_results(model_name, default_name="default"):
             plt.ylabel('Count')
         elif metric == 'average_speed':
             plt.ylabel('m/s')
-        elif metric == 'throughput':
+        elif metric == 'pressure':
             plt.ylabel('Vehicles per step')
             
         plt.grid(True)
@@ -97,7 +97,7 @@ def compare_results(model_name, default_name="default"):
         if metric in ['waiting_time', 'queue_length', 'collisions', 'emergency_stops']:
             improvement = ((default_avg - model_avg) / default_avg * 100) if default_avg != 0 else 0
             better = "lower" if model_avg < default_avg else "higher"
-        else:  #for average_speed and throughput, higher is better
+        else:  #for average_speed and pressure, higher is better
             improvement = ((model_avg - default_avg) / default_avg * 100) if default_avg != 0 else 0
             better = "higher" if model_avg > default_avg else "lower"
         
@@ -106,14 +106,14 @@ def compare_results(model_name, default_name="default"):
         print(f"  Default: {default_avg:.2f}")
         print(f"  Difference: {improvement:.2f}% {better}")
         
-        #add cumulative comparisons for throughput
-        if metric == 'throughput':
+        #add cumulative comparisons for pressure
+        if metric == 'pressure':
             model_total = model_df[metric].sum()
             default_total = default_df[metric].sum()
             diff_pct = ((model_total - default_total) / default_total * 100) if default_total != 0 else 0
-            print(f"  Total throughput - PPO: {model_total} vehicles")
-            print(f"  Total throughput - Default: {default_total} vehicles")
-            print(f"  Throughput improvement: {diff_pct:.2f}%")
+            print(f"  Total pressure - PPO: {model_total} vehicles")
+            print(f"  Total pressure - Default: {default_total} vehicles")
+            print(f"  pressure improvement: {diff_pct:.2f}%")
 
 if __name__ == "__main__":
     import argparse

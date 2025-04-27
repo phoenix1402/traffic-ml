@@ -5,7 +5,7 @@ import gymnasium as gym
 import numpy as np
 
 class TrafficLights:
-    def __init__(self, signal_id, yellow_time=4, max_green_time=40, min_green_time=5, reward_func="waiting_time_diff", has_pedestrians=False):
+    def __init__(self, signal_id, yellow_time=4, max_green_time=40, min_green_time=10, reward_func="waiting_time_diff", has_pedestrians=False):
         #TrafficLights manages a single traffic light in the sumo environment.
     
         #traffic light parameters
@@ -15,6 +15,10 @@ class TrafficLights:
         self.min_green_time = min_green_time #minimum green phase duration
         self.reward_func = reward_func
         self.last_wait_time = 0
+        self.last_queue = 0
+        self.last_speed = 0
+        self.last_pressure = 0
+        self.last_emergency_stops = 0
         self.is_yellow = False
         self.next_green_phase = 0
         self.has_pedestrians = has_pedestrians
@@ -253,7 +257,7 @@ class TrafficLights:
         current_wait_time = self.get_accumulated_waiting_time()
         current_queue = self.get_queue_length()
         current_speed = self.get_average_speed()
-        current_throughput = self.get_throughput()
+        current_pressure = self.get_pressure()
         current_emergency_stops = self.get_emergency_stops()
         
         #add pedestrian metrics if relevant
@@ -268,7 +272,7 @@ class TrafficLights:
         if not hasattr(self, 'last_queue'):
             self.last_queue = current_queue
             self.last_speed = current_speed
-            self.last_throughput = current_throughput
+            self.last_pressure = current_pressure
             self.last_emergency_stops = current_emergency_stops
             self.last_pedestrian_wait = current_pedestrian_wait if self.has_pedestrians else 0
         
@@ -276,7 +280,7 @@ class TrafficLights:
         wait_reward = (self.last_wait_time - current_wait_time)
         queue_reward = (self.last_queue - current_queue) * 0.5
         speed_reward = (current_speed - self.last_speed) * 2.0
-        throughput_reward = (current_throughput - self.last_throughput) * 1.0
+        pressure_reward = (current_pressure - self.last_pressure) * 1.0
         
         #calculate emergency stop penalty
         emergency_stop_penalty = current_emergency_stops * -2.0
@@ -292,8 +296,7 @@ class TrafficLights:
                 wait_reward * 1.0 + #reduce waiting time
                 queue_reward * 0.5 + #reduce queue length
                 speed_reward * 0.3 + #increase average speed
-                throughput_reward * 0.2 + #increase throughput
-                emergency_stop_penalty + #heavily penalise emergency stops
+                pressure_reward * 0.2 + #improve traffic balance (pressure)
                 pedestrian_wait_penalty * 0.8 #pedestrian waiting time
             )
         else:
@@ -301,15 +304,14 @@ class TrafficLights:
                 wait_reward * 1.0 +
                 queue_reward * 0.5 +
                 speed_reward * 0.3 +
-                throughput_reward * 0.2 +
-                emergency_stop_penalty
+                pressure_reward * 0.2
             )
         
         #update metrics for next comparison
         self.last_wait_time = current_wait_time
         self.last_queue = current_queue
         self.last_speed = current_speed
-        self.last_throughput = current_throughput
+        self.last_pressure = current_pressure  # Changed from throughput to pressure
         self.last_emergency_stops = current_emergency_stops
         if self.has_pedestrians:
             self.last_pedestrian_wait = current_pedestrian_wait
@@ -351,13 +353,25 @@ class TrafficLights:
                 
         return total_speed / max(1, total_vehicles)
     
-    def get_throughput(self):
-        #get traffic throughput at this intersection
-        controlled_lanes = traci.trafficlight.getControlledLanes(self.id)
-        return sum(traci.lane.getLastStepVehicleNumber(lane) for lane in controlled_lanes)
+    def get_pressure(self):
+        #get controlled lanes
+        incoming_lanes = traci.trafficlight.getControlledLanes(self.id)
+        
+        #get outgoing lanes
+        outgoing_lanes = []
+        for connection in traci.trafficlight.getControlledLinks(self.id):
+            if connection and len(connection) > 0 and connection[0][1]:  # If there's a valid connection
+                outgoing_lane = connection[0][1]
+                if outgoing_lane not in outgoing_lanes and not outgoing_lane.startswith(':'):
+                    outgoing_lanes.append(outgoing_lane)
+        
+        #calculate pressure as difference between vehicles on outgoing vs incoming lanes
+        outgoing_count = sum(traci.lane.getLastStepVehicleNumber(lane) for lane in outgoing_lanes)
+        incoming_count = sum(traci.lane.getLastStepVehicleNumber(lane) for lane in incoming_lanes)
+        
+        return outgoing_count - incoming_count
     
     def get_emergency_stops(self):
-        """Count vehicles with deceleration > 4.5 m/s² in controlled lanes"""
         controlled_lanes = traci.trafficlight.getControlledLanes(self.id)
         
         emergency_stops = 0
