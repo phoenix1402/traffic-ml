@@ -67,7 +67,8 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
             'average_speed': [],
             'collisions': [],
             'emergency_stops': [],
-            'cumulative_reward': []
+            'cumulative_reward': [],
+            'co2_emissions': []
         }
         
         #add pedestrian metrics if needed
@@ -105,6 +106,7 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
                 metrics['queue_length'].append(ts.get_queue_length())
                 metrics['average_speed'].append(ts.get_average_speed())
                 metrics['pressure'].append(ts.get_pressure())
+                metrics['co2_emissions'].append(ts.get_co2_emissions())
                 
                 #get collision data from SUMO simulation
                 metrics['collisions'].append(traci.simulation.getCollidingVehiclesNumber())
@@ -153,7 +155,7 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
         plt.figure(figsize=(15, 10))
         
         #plot the main performance metrics in a 2x2 grid
-        metrics_to_plot = ['waiting_time', 'queue_length', 'average_speed', 'pressure']
+        metrics_to_plot = ['waiting_time', 'queue_length', 'average_speed', 'pressure', 'cumulative_reward', 'co2_emissions']
         
         for i, metric in enumerate(metrics_to_plot):
             plt.subplot(2, 2, i+1)
@@ -167,6 +169,10 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
                 plt.ylabel('m/s')
             elif metric == 'pressure':
                 plt.ylabel('Vehicles (out-in)')
+            elif metric == 'cumulative_reward':
+                plt.ylabel('Total Reward')
+            elif metric == 'co2_emissions':
+                plt.ylabel('g CO2')
                 
             plt.grid(True)
         

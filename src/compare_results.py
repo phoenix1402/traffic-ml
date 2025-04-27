@@ -26,7 +26,7 @@ def compare_results(model_name, default_name="default"):
     
     plt.figure(figsize=(15, 10))
 
-    metrics_to_plot = ['waiting_time', 'queue_length', 'average_speed', 'pressure']
+    metrics_to_plot = ['waiting_time', 'queue_length', 'average_speed', 'pressure', 'cumulative_reward', 'co2_emissions']
     
     for i, metric in enumerate(metrics_to_plot):
         plt.subplot(2, 2, i+1)
@@ -41,6 +41,10 @@ def compare_results(model_name, default_name="default"):
             plt.ylabel('m/s')
         elif metric == 'pressure':
             plt.ylabel('Vehicles per step')
+        elif metric == 'cumulative_reward':
+            plt.ylabel('Reward')
+        elif metric == 'co2_emissions':
+            plt.ylabel('g CO2')
             
         plt.grid(True)
         plt.legend()

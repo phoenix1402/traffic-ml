@@ -383,6 +383,19 @@ class TrafficLights:
                     
         return emergency_stops
     
+    def get_co2_emissions(self):
+        controlled_lanes = traci.trafficlight.getControlledLanes(self.id)
+        total_co2 = 0
+        
+        for lane in controlled_lanes:
+            vehicle_ids = traci.lane.getLastStepVehicleIDs(lane)
+            for vehicle_id in vehicle_ids:
+                #CO2 emission in mg/s
+                total_co2 += traci.vehicle.getCO2Emission(vehicle_id)
+        
+        #convert from mg to g
+        return total_co2 / 1000.0
+
     def reset(self):
         #reset traffic light state for a new episode
         self.time_since_last_change = 0
