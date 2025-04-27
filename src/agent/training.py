@@ -411,11 +411,17 @@ def main():
 if __name__ == "__main__":
     main()
 
-# Run with default parameters:
-# python -m src.agent.training
+# Cross intersection with high vertical traffic:
+# python -m src.agent.training --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_vertical.rou.xml --steps 5000 --total 100000
 #
-# Run with custom parameters:
-# python -m src.agent.training --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_vertical.rou.xml --steps 3000 --total 150000
-#
-# Run with config file:
+# Urban environment with pedestrians:
 # python -m src.agent.training --config src/networks/acosta_persontrips/run.sumocfg --steps 5000 --total 100000
+#
+# 1 lane cross:
+# python -m src.agent.training --net src/networks/cross1ltl/net.net.xml --route src/networks/cross1ltl/input_routes.rou.xml --steps 3000 --total 100000 --eval-freq 5000
+
+# 3 lane cross:
+# python -m src.agent.training --net src/networks/cross3ltl/net.net.xml --route src/networks/cross3ltl/input_routes.rou.xml --steps 3000 --total 100000 --eval-freq 5000
+
+# 2 intersections:
+# python -m src.agent.training --net src/networks/2x2/2x2.net.xml --route src/networks/2x2/2x2.rou.xml --steps 5000 --total 150000 --eval-freq 1000
