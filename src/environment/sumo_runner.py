@@ -152,13 +152,11 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
         csv_path = os.path.join(graphs_dir, f"sim_results_{model_name}.csv")
         df.to_csv(csv_path, index=False)
         
-        plt.figure(figsize=(15, 10))
-        
-        #plot the main performance metrics in a 2x2 grid
+        plt.figure(figsize=(15, 15))
         metrics_to_plot = ['waiting_time', 'queue_length', 'average_speed', 'pressure', 'cumulative_reward', 'co2_emissions']
         
         for i, metric in enumerate(metrics_to_plot):
-            plt.subplot(2, 2, i+1)
+            plt.subplot(3, 2, i+1)
             plt.plot(metrics['step'], metrics[metric], 'b-', linewidth=2)
             plt.title(metric.replace('_', ' ').title())
             plt.xlabel('Simulation Step')
@@ -260,11 +258,14 @@ def main():
 if __name__ == "__main__":
     main()
 
-# Run with PPO model
-#python -m src.environment.sumo_runner --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_horizontal.rou.xml --model src/agent/ppo_traffic_light_model.zip --steps 8000
+# 2 lane junc gen
+# python -m src.environment.sumo_runner --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_gen.rou.xml --model src/agent/trained_models/ppo_model_single_gen.zip --steps 5000
+# python -m src.environment.sumo_runner --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_gen.rou.xml --default --steps 5000
 
-# Run with default controller
-#python -m src.environment.sumo_runner --net src/networks/2lane_junc/single.net.xml --route src/networks/2lane_junc/single_horizontal.rou.xml --default --steps 8000
+# cross3ltl
+# python -m src.environment.sumo_runner --net src/networks/cross3ltl/net.net.xml --route src/networks/cross3ltl/cross3ltl.rou.xml --model src/agent/trained_models/ppo_model_cross3ltl.zip --steps 5000
+# python -m src.environment.sumo_runner --net src/networks/cross3ltl/net.net.xml --route src/networks/cross3ltl/cross3ltl.rou.xml --default --steps 5000
 
-# python -m src.environment.sumo_runner --net src/networks/2x2/2x2.net.xml --route src/networks/2x2/2x2.rou.xml --model src/agent/ppo_traffic_light_model.zip --steps 5000
+# 2x2
+# python -m src.environment.sumo_runner --net src/networks/2x2/2x2.net.xml --route src/networks/2x2/2x2.rou.xml --model src/agent/trained_models/ppo_model_2x2.zip --steps 5000
 # python -m src.environment.sumo_runner --net src/networks/2x2/2x2.net.xml --route src/networks/2x2/2x2.rou.xml --default --steps 5000

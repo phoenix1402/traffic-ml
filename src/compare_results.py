@@ -24,12 +24,12 @@ def compare_results(model_name, default_name="default"):
     print(f"Available columns in model CSV: {model_df.columns.tolist()}")
     print(f"Available columns in default CSV: {default_df.columns.tolist()}")
     
-    plt.figure(figsize=(15, 10))
+    plt.figure(figsize=(15, 15))
 
     metrics_to_plot = ['waiting_time', 'queue_length', 'average_speed', 'pressure', 'cumulative_reward', 'co2_emissions']
     
     for i, metric in enumerate(metrics_to_plot):
-        plt.subplot(2, 2, i+1)
+        plt.subplot(3, 2, i+1)  # Changed from 2x2 to 3x2 grid
         plt.plot(model_df['step'], model_df[metric], label=f'PPO Model')
         plt.plot(default_df['step'], default_df[metric], label='Default SUMO Controller')
         plt.title(metric.replace('_', ' ').title())
@@ -126,3 +126,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     compare_results(args.model)
+
+#python -m src.compare_results --model cross3ltl

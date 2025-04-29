@@ -258,7 +258,6 @@ class TrafficLights:
         current_queue = self.get_queue_length()
         current_speed = self.get_average_speed()
         current_pressure = self.get_pressure()
-        current_emergency_stops = self.get_emergency_stops()
         
         #add pedestrian metrics if relevant
         current_pedestrian_wait = 0
@@ -273,7 +272,6 @@ class TrafficLights:
             self.last_queue = current_queue
             self.last_speed = current_speed
             self.last_pressure = current_pressure
-            self.last_emergency_stops = current_emergency_stops
             self.last_pedestrian_wait = current_pedestrian_wait if self.has_pedestrians else 0
         
         #calculate individual rewards
@@ -282,8 +280,6 @@ class TrafficLights:
         speed_reward = (current_speed - self.last_speed) * 2.0
         pressure_reward = (current_pressure - self.last_pressure) * 1.0
         
-        #calculate emergency stop penalty
-        emergency_stop_penalty = current_emergency_stops * -2.0
         
         #calculate pedestrian waiting time penalty
         pedestrian_wait_penalty = 0
@@ -311,8 +307,7 @@ class TrafficLights:
         self.last_wait_time = current_wait_time
         self.last_queue = current_queue
         self.last_speed = current_speed
-        self.last_pressure = current_pressure  # Changed from throughput to pressure
-        self.last_emergency_stops = current_emergency_stops
+        self.last_pressure = current_pressure 
         if self.has_pedestrians:
             self.last_pedestrian_wait = current_pedestrian_wait
         
