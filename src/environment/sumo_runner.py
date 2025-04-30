@@ -11,9 +11,6 @@ from src.environment.sumo_env import SumoEnvironment
 from src.environment.env_wrappers import MultiTrafficLightWrapper
 
 def run_simulation(net_file=None, route_file=None, config_file=None, model_path=None, steps=3600, gui=True, use_default=False):
-    """
-    Run SUMO simulation with either direct net/route files or a config file
-    """
     if config_file:
         print(f"Starting simulation with config file: {config_file}")
         # Check if the config likely contains pedestrian data
@@ -27,6 +24,7 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
     print(f"GUI enabled: {gui}")
     print(f"Using default traffic light controller: {use_default}")
     
+    seed = 42
     #create environment
     try:
         env = SumoEnvironment(
@@ -38,7 +36,8 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
             max_green=30,
             min_green=5,
             yellow_time=4,
-            has_pedestrians=has_pedestrians
+            has_pedestrians=has_pedestrians,
+            seed=seed
         )
 
         env = MultiTrafficLightWrapper(env)
