@@ -177,6 +177,10 @@ class CustomCallback(BaseCallback):
         return result
     
     def save_metrics(self):
+        self.save_simulation_metrics()
+        self.save_training_metrics()
+    
+    def save_simulation_metrics(self):
         #determine number of subplots based on whether we have pedestrian data
         num_rows = 3 if self.has_pedestrians else 2
         num_cols = 3
@@ -225,57 +229,54 @@ class CustomCallback(BaseCallback):
             plt.title('Mean Pedestrian Count')
             plt.xlabel('Evaluation')
             plt.ylabel('Number of Pedestrians')
-
-        if len(self.policy_losses) > 0:
-            plt.figure(figsize=(15, 10))
-            
-            #policy Loss
-            plt.subplot(2, 3, 1)
-            plt.plot(self.policy_losses)
-            plt.title('Policy Loss')
-            plt.xlabel('Updates')
-            plt.ylabel('Loss')
-            plt.grid(True)
-            
-            #value Loss
-            plt.subplot(2, 3, 2)
-            plt.plot(self.value_losses)
-            plt.title('Value Function Loss')
-            plt.xlabel('Updates') 
-            plt.ylabel('Loss')
-            plt.grid(True)
-            
-            #entropy
-            plt.subplot(2, 3, 3)
-            plt.plot(self.entropy_losses)
-            plt.title('Entropy')
-            plt.xlabel('Updates')
-            plt.ylabel('Entropy')
-            plt.grid(True)
-            
-            #approximate KL divergence
-            if len(self.approx_kl_divs) > 0:
-                plt.subplot(2, 3, 4)
-                plt.plot(self.approx_kl_divs)
-                plt.title('Approximate KL Divergence')
-                plt.xlabel('Updates')
-                plt.ylabel('KL Divergence')
-                plt.grid(True)
-            
-            #explained Variance
-            if len(self.explained_variances) > 0:
-                plt.subplot(2, 3, 6)
-                plt.plot(self.explained_variances)
-                plt.title('Explained Variance')
-                plt.xlabel('Updates')
-                plt.ylabel('Variance')
-                plt.grid(True)
-            
+        
         plt.tight_layout()
         src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         graphs_dir = os.path.join(src_dir, "graphs")
         model_suffix = "_with_peds" if self.has_pedestrians else ""
-        plt.savefig(os.path.join(graphs_dir, f"training_progress_{self.n_calls}{model_suffix}.png"))
+        plt.savefig(os.path.join(graphs_dir, f"simulation_metrics_{self.n_calls}{model_suffix}.png"))
+        plt.close()
+        
+    def save_training_metrics(self):
+        plt.figure(figsize=(15, 10))
+        
+        #value loss
+        plt.subplot(2, 3, 1)
+        plt.plot(self.value_losses)
+        plt.title('Value Loss')
+        plt.xlabel('Updates') 
+        plt.ylabel('Loss')
+        plt.grid(True)
+        
+        #entropy
+        plt.subplot(2, 3, 2)
+        plt.plot(self.entropy_losses)
+        plt.title('Entropy')
+        plt.xlabel('Updates')
+        plt.ylabel('Entropy')
+        plt.grid(True)
+        
+        #approximate KL divergence
+        plt.subplot(2, 3, 3)
+        plt.plot(self.approx_kl_divs)
+        plt.title('Approximate KL Divergence')
+        plt.xlabel('Updates')
+        plt.ylabel('KL Divergence')
+        plt.grid(True)
+        
+        #explained variance
+        plt.subplot(2, 3, 4)
+        plt.plot(self.explained_variances)
+        plt.title('Explained Variance')
+        plt.xlabel('Updates')
+        plt.ylabel('Variance')
+        plt.grid(True)
+
+        plt.tight_layout()
+        src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        graphs_dir = os.path.join(src_dir, "graphs")
+        model_suffix = "_with_peds" if self.has_pedestrians else ""
+        plt.savefig(os.path.join(graphs_dir, f"training_metrics_{self.n_calls}{model_suffix}.png"))
         plt.close()
 
 def main():
