@@ -23,8 +23,7 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
     
     print(f"GUI enabled: {gui}")
     print(f"Using default traffic light controller: {use_default}")
-    
-    seed = 42
+
     #create environment
     try:
         env = SumoEnvironment(
@@ -36,8 +35,7 @@ def run_simulation(net_file=None, route_file=None, config_file=None, model_path=
             max_green=30,
             min_green=5,
             yellow_time=4,
-            has_pedestrians=has_pedestrians,
-            seed=seed
+            has_pedestrians=has_pedestrians
         )
 
         env = MultiTrafficLightWrapper(env)

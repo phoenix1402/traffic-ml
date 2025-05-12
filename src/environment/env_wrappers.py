@@ -3,10 +3,6 @@ import numpy as np
 from gymnasium import spaces
 
 class MultiTrafficLightWrapper(gym.Wrapper):
-    """
-    Wrapper to handle multiple traffic lights in SumoEnvironment.
-    Makes the environment compatible with Stable Baselines 3.
-    """
     def __init__(self, env):
         super().__init__(env)
         
